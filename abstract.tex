@@ -1,0 +1,16 @@
+\begin{abstract}
+Synchronous updates to independent files still contend for a few shared append states inside the filesystem.
+On Zoned Namespace (ZNS) solid-state drives (SSDs), distributing appends must respect active and open zone limits while preserving synchronization semantics for all pending mappings.
+These mappings include obligations from earlier asynchronous writeback, even after the corresponding data pages become clean.
+
+Z-ParaPack organizes file-update commit closures together with append permissions.
+An update pack (PACK) gathers current writeback and pending mappings; a terminal record in the last selected node defines durable completion.
+Reusable append lanes separate allocation state across concurrent updates and reserve a lane for maintenance writes.
+Recovery validates and replays complete PACKs in commit-number order.
+On Linux 7.2.9, Z-ParaPack exceeds the fastest baseline under highly concurrent synchronous random writes and increases completion rates for mixed file operations, database transactions, and persistent messaging.
+Both SQLite configurations improve transaction completion rates and achieve the lowest p99.9 among the evaluated systems.
+Path analysis shows shorter shared-allocation intervals together with shorter complete synchronization calls at high concurrency.
+\end{abstract}
+\begin{IEEEkeywords}
+ZNS SSD, file systems, file synchronization, parallel append, crash recovery.
+\end{IEEEkeywords}

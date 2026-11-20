@@ -1,0 +1,67 @@
+\section{Background and Motivation}\label{sec:motivation}
+\subsection{Independent Durable Updates and Finite Append Resources}
+Independent file updates provide opportunities for parallel persistence.
+Different databases and message streams update their own files, and \texttt{fsync} must confirm each file's contents and recovery metadata.
+The filesystem must still allocate new blocks for overwrites, update mappings, and return after durable completion.
+
+ZNS requires sequential appends within each zone and separately limits active and open zones.
+Closing a partially written zone releases open occupancy but retains active occupancy.
+Our device permits sixteen of each, so 32 workers cannot obtain 32 physical append heads by permanently reserving one writable zone each.
+Software request concurrency and physical zone occupancy therefore require separate management.
+Foreground commits, ordinary asynchronous writeback, and GC must share this budget.
+
+\subsection{Independent Updates Converge on Shared Allocation State}
+F2FS stores file contents in DATA and inode information and block addresses in NODE~\cite{r1}.
+An overwrite allocates a new DATA location and records its address in the corresponding NODE.
+Both block types occupy the main area (MAIN).
+The six-log configuration selects curseg by DATA/NODE and hot, warm, or cold class.
+Each curseg records a segment number, summary, and next allocation position.
+Files in the same class acquire the same curseg mutex to allocate addresses, record summaries, and advance offsets.
+
+ScaleLFS adds independent GC streams, and Z-LFS expands the zones available to logs.
+Ordinary file writeback in both systems retains type-based curseg sharing~\cite{r5,r8,r13,r14}.
+Adding reclamation streams or available zones addresses a different layer of concurrency from separating ordinary updates' allocation state.
+
+Files that update independently at the application converge on the same curseg in the allocator.
+Figure~\ref{fig:motivation} examines this sharing through throughput, allocation streams, and synchronization paths.
+All numerical panels use 64\,KiB updates, with separate runs for throughput, allocation counts, and path diagnostics.
+Section~\ref{sec:cost} defines the diagnostic protocols.
+
+
+
+As concurrency increases, completion rates for all three baselines rise and then decline.
+F2FS, ScaleLFS, and Z-LFS peak at four threads in Figure~\ref{fig:motivation}(a), at 5.82, 6.02, and 3.66\,kIOPS, respectively.
+At 32 threads, their rates fall to 0.93, 0.93, and 0.75\,kIOPS.
+F2FS allocation counts locate the sharing across files.
+At one, two, and four threads, all DATA enters hot DATA and all NODEs enter warm NODE, while the other four streams receive zero blocks (Figure~\ref{fig:motivation}(b)).
+Different files thus access the same DATA or NODE allocation state (Figure~\ref{fig:motivation}(d)).
+
+This sharing also appears within complete synchronization calls.
+DATA/NODE curseg acquisition and hold intervals occupy 13.3\% of sampled \texttt{fsync} time at one thread, rising to 44.1\%, 72.9\%, and 93.9\% at eight, sixteen, and 32 threads.
+At 32 threads, the complete call takes 40.845\,ms, including 38.369\,ms across the two curseg classes.
+Acquisition intervals include execution, queuing, and scheduling; Other covers remaining synchronization work and \texttt{balance}.
+These measurements locate elapsed time on the shared allocation path.
+
+\subsection{Jointly Organizing Parallel Allocation and Recoverable Commits}\label{sec:joint}
+The observations expose different organizational units at the application and allocator.
+Applications update independent files, while allocation shares state across a few log classes.
+Separating append state by concurrent file update can reduce contention at those entry points.
+ZNS limits and file synchronization semantics further determine how these states can operate.
+
+Software append lanes must reuse finite physical resources.
+Each commit or asynchronous writeback batch acquires and releases append permission so subsequent updates can reuse the lane.
+Maintenance uses a reserved lane under the same physical zone limits.
+Partitioning software state by core or thread still requires common accounting for active/open occupancy.
+
+Mapping obligations can also outlive an append lease.
+Suppose asynchronous writeback overwrites block $a$ of an existing file at $a'$, clears the DATA dirty flag, and releases the old lease.
+The application then overwrites block $b$ and calls \texttt{fsync}.
+This synchronization must confirm mappings for both $a'$ and the newly written $b'$.
+Inspecting current dirty DATA pages misses $a'$; adding DATA logs alone leaves the corresponding NODEs sharing an allocation entry point.
+After distributing NODEs, the original fsync-node sequence no longer directly identifies this commit's terminal.
+Physical scan order across lanes also cannot determine commit order.
+The commit protocol must connect mapping obligations across leases to selected NODEs and the terminal that confirms them.
+
+Z-ParaPack uses PACK to define each update's commit closure and lanes to separate append state across updates.
+Leases manage append permission within the common zone budget.
+Terminals and commit numbers identify complete PACKs and their recovery order, while a reserved maintenance lane carries writeback and reclamation outside commits.

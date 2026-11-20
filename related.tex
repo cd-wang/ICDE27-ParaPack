@@ -1,0 +1,25 @@
+\section{Related Work}\label{sec:related}
+\textbf{Parallel logs and decentralized metadata.}
+Max dynamically assigns complete file operations to log partitions.
+Each partition contains temperature-classified DATA and inode logs, with recovery merging through global inode versions~\cite{r2}.
+DeLFS decentralizes resource and lock ownership and separates critical work from deferrable work~\cite{r4}.
+Z-ParaPack gathers current writeback and mapping obligations from earlier writeback into a PACK.
+Its closure spans lane leases, while the current selected NODEs and terminal confirm completion.
+This organization of parallel appends also specifies the contents that file synchronization must commit.
+
+\textbf{ZNS logs and resource management.}
+Z-LFS uses append-only metadata, temperature-based speculative log-stream management, and conflict-aware allocation to exploit small zones~\cite{r5}.
+Its 2026 journal extension uses dedicated per-stream writers for parallel writeback~\cite{r17}.
+Our comparison uses a port of the ATC-version public source.
+ScaleLFS scales reclamation with GC-specific streams and local coordination~\cite{r8}; eZNS manages zone resources and I/O admission at the interface~\cite{r9}.
+Z-ParaPack separates returnable lane append permission from persistent physical-zone accounting.
+It reuses file-update lanes within common active/open limits and reserves append state for maintenance writes.
+
+\textbf{Synchronization and recovery.}
+F2FS node chains, fsync/dentry marks, and checkpoints provide the original recovery foundation~\cite{r1}.
+ScaleZNFS uses multihead DATA logs, per-log scheduling, ZNS-driven node ordering, and split fsync-node wait lists.
+Each NODE type still uses one log and retains F2FS recovery~\cite{r3}.
+F2FSJ collects metadata changes in in-memory per-inode log lists, aggregates them into an on-disk epoch journal, and commits and applies the journal~\cite{r7}.
+Ma et al. parallelize DATA and dnode writeback~\cite{r6}.
+Z-ParaPack further distributes related NODEs across file-update lanes and confirms completion through the current PACK's terminal.
+It recovers node chains and commit order within checkpoint generations, giving completion confirmation and distributed-node recovery the same PACK boundary.
